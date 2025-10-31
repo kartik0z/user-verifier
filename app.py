@@ -229,15 +229,13 @@ def fetch_live_blacklist(sheet_csv_url: str) -> Set[int]:
 # --------- UI ----------
 st.title("Roblox User Verifier")
 
-col1, col2 = st.columns([2, 1])
+username = st.text_input("Roblox username", value="", help="Enter the Roblox username to verify.")
+sheet_url = st.text_input("Optional: Live blacklist CSV URL (public Google Sheet export URL)", value="", help="Provide CSV export link to include more blacklist IDs.")
+run = st.button("Run Verification")
 
-with col1:
-    username = st.text_input("Roblox username", value="", help="Enter the Roblox username to verify.")
-    sheet_url = st.text_input("Optional: Live blacklist CSV URL (public Google Sheet export URL)", value="", help="Provide CSV export link to include more blacklist IDs.")
-    run = st.button("Run Verification")
+st.markdown("--- ")
 
-with col2:
-    st.markdown("**Config summary**")
+with st.expander("Config summary"):
     st.write(
         {
             "Friendly owner IDs": len(FRIENDLY_OWNER_IDS),
@@ -331,41 +329,41 @@ if run:
                 st.write("- Manually inspect groups listed below.")
 
                 # Show groups table
-                st.markdown("### Groups (first 200 shown)")
-                if groups:
-                    groups_display = [
-                        {
-                            "group_id": g['group'].get('id'),
-                            "group_name": g['group'].get('name'),
-                            "role": g.get('role', {}).get('name')
-                            if isinstance(g.get('role'), dict)
-                            else g.get('role'),
-                            "owner_id": g['group'].get('owner', {}).get('userId')
-                            if isinstance(g['group'].get('owner'), dict)
-                            else None,
-                        }
-                        for g in groups[:200]
-                    ]
-                    st.table(groups_display)
-                else:
-                    st.write("No groups found or could not fetch groups.")
+                with st.expander("Groups (first 200 shown)"):
+                    if groups:
+                        groups_display = [
+                            {
+                                "group_id": g['group'].get('id'),
+                                "group_name": g['group'].get('name'),
+                                "role": g.get('role', {}).get('name')
+                                if isinstance(g.get('role'), dict)
+                                else g.get('role'),
+                                "owner_id": g['group'].get('owner', {}).get('userId')
+                                if isinstance(g['group'].get('owner'), dict)
+                                else None,
+                            }
+                            for g in groups[:200]
+                        ]
+                        st.table(groups_display)
+                    else:
+                        st.write("No groups found or could not fetch groups.")
 
                 # Show oldest badges summary
-                st.markdown("### Oldest badges (sample)")
-                with st.spinner("Fetching oldest badges..."):
-                    oldest = get_oldest_badges(user_id, 30)
-                if oldest:
-                    badges_display = [
-                        {
-                            "id": b.get('id'),
-                            "name": b.get('name'),
-                            "awarded": b.get('awarded') or b.get('awardedAt'),
-                        }
-                        for b in oldest
-                    ]
-                    st.table(badges_display)
-                else:
-                    st.write("No badges or could not fetch badges.")
+                with st.expander("Oldest badges (sample)"):
+                    with st.spinner("Fetching oldest badges..."):
+                        oldest = get_oldest_badges(user_id, 30)
+                    if oldest:
+                        badges_display = [
+                            {
+                                "id": b.get('id'),
+                                "name": b.get('name'),
+                                "awarded": b.get('awarded') or b.get('awardedAt'),
+                            }
+                            for b in oldest
+                        ]
+                        st.table(badges_display)
+                    else:
+                        st.write("No badges or could not fetch badges.")
 
                 # Allow download of the report JSON
                 report = {

@@ -132,6 +132,13 @@ def get_total_badge_count(user_id: int, pass_threshold: int = 300) -> int:
     return total_badges
 
 # --------- Logic functions ----------
+MIN_ACCOUNT_AGE_DAYS = 60
+MIN_FRIEND_COUNT = 30
+MIN_NON_BA_GROUP_COUNT = 13
+MIN_BADGE_COUNT = 300
+OLDEST_BADGES_TO_CHECK = 90
+USERNAME_DIGIT_THRESHOLD = 4
+
 def check_account_age(user_info: Dict[str, Any]) -> Tuple[bool, str]:
     created_str = user_info.get('created')
     if not created_str:
@@ -147,8 +154,8 @@ def check_account_age(user_info: Dict[str, Any]) -> Tuple[bool, str]:
             return True, f"Could not parse account creation date: {created_str}"
     age = datetime.datetime.now(datetime.timezone.utc) - created_date
     days_old = age.days
-    if days_old < 60:
-        return True, f"Account is {days_old} days old (under 60)."
+    if days_old < MIN_ACCOUNT_AGE_DAYS:
+        return True, f"Account is {days_old} days old (under {MIN_ACCOUNT_AGE_DAYS})."
     return False, f"Account is {days_old} days old."
 
 def check_username(user_info: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
@@ -160,8 +167,8 @@ def check_username(user_info: Dict[str, Any]) -> Tuple[Optional[str], Optional[s
     for word in NSFW_WORDS:
         if word in username:
             return f"Username contains offensive word: '{word}'.", None
-    if len(re.findall(r'\d', username)) >= 4:
-        return None, "Username looks spammy (4+ digits)."
+    if len(re.findall(r'\d', username)) >= USERNAME_DIGIT_THRESHOLD:
+        return None, f"Username looks spammy ({USERNAME_DIGIT_THRESHOLD}+ digits)."
     return None, None
 
 def check_social_activity(user_id: int, groups: List[Dict[str, Any]]) -> List[str]:
@@ -169,25 +176,25 @@ def check_social_activity(user_id: int, groups: List[Dict[str, Any]]) -> List[st
     friend_count = get_friend_count(user_id)
     if friend_count is None:
         red_flags.append("Could not verify friend count.")
-    elif friend_count < 30:
-        red_flags.append(f"Fewer than 30 friends ({friend_count}).")
+    elif friend_count < MIN_FRIEND_COUNT:
+        red_flags.append(f"Fewer than {MIN_FRIEND_COUNT} friends ({friend_count}).")
     non_ba_groups = [g for g in groups if g['group']['id'] not in BA_UK_GROUP_IDS]
     non_ba_group_count = len(non_ba_groups)
-    if non_ba_group_count < 13:
-        red_flags.append(f"Fewer than 13 non-BA groups ({non_ba_group_count}).")
-    badge_count = get_total_badge_count(user_id, 300)
-    if badge_count < 300:
+    if non_ba_group_count < MIN_NON_BA_GROUP_COUNT:
+        red_flags.append(f"Fewer than {MIN_NON_BA_GROUP_COUNT} non-BA groups ({non_ba_group_count}).")
+    badge_count = get_total_badge_count(user_id, MIN_BADGE_COUNT)
+    if badge_count < MIN_BADGE_COUNT:
         red_flags.append(f"Fewer than 10 pages of badges ({badge_count} total).")
-    oldest_badges = get_oldest_badges(user_id, 90)
+    oldest_badges = get_oldest_badges(user_id, OLDEST_BADGES_TO_CHECK)
     for badge in oldest_badges:
         if badge.get('id') in BA_BADGE_IDS:
             red_flags.append(f"BA-related badge found in oldest 3 pages (ID: {badge.get('id')}).")
             break
     return red_flags
 
-def check_blacklists(user_id: int, groups: List[Dict[str, Any]]) -> List[str]:
+def check_blacklists(user_id: int, groups: List[Dict[str, Any]], ifd_blacklist: Set[int]) -> List[str]:
     dismissals = []
-    if user_id in IFD_BLACKLIST_IDS:
+    if user_id in ifd_blacklist:
         dismissals.append("User is on the IFD Blacklist.")
     if user_id in BA_BLACKLIST_IDS:
         dismissals.append("User is on the BA Blacklist.")
@@ -231,15 +238,17 @@ with col1:
 
 with col2:
     st.markdown("**Config summary**")
-    st.write({
-        "Friendly owner IDs": len(FRIENDLY_OWNER_IDS),
-        "BA UK groups": len(BA_UK_GROUP_IDS),
-        "Blacklisted groups": len(BLACKLISTED_GROUP_IDS),
-        "BA badge IDs": len(BA_BADGE_IDS),
-        "IFD blacklist users": len(IFD_BLACKLIST_IDS),
-        "BA blacklist users": len(BA_BLACKLIST_IDS),
-        "NSFW words": len(NSFW_WORDS),
-    })
+    st.write(
+        {
+            "Friendly owner IDs": len(FRIENDLY_OWNER_IDS),
+            "BA UK groups": len(BA_UK_GROUP_IDS),
+            "Blacklisted groups": len(BLACKLISTED_GROUP_IDS),
+            "BA badge IDs": len(BA_BADGE_IDS),
+            "IFD blacklist users": len(IFD_BLACKLIST_IDS),
+            "BA blacklist users": len(BA_BLACKLIST_IDS),
+            "NSFW words": len(NSFW_WORDS),
+        }
+    )
 
 if run:
     if not username:
@@ -287,27 +296,7 @@ if run:
                 if flag_reason:
                     red_flags.append(flag_reason)
 
-                # For blacklist check use temp_ifd if provided
-                # Temporarily override IFD_BLACKLIST_IDS for this run
-                IFD_BLACKLIST_IDS = temp_ifd  # read-only global, but we used temp_ifd below
-                # run blacklist check using temp_ifd by copying function logic here
-                bl_reasons = []
-                uid = user_id
-                if uid in temp_ifd:
-                    bl_reasons.append("User is on the IFD Blacklist (live).")
-                if uid in BA_BLACKLIST_IDS:
-                    bl_reasons.append("User is on the BA Blacklist.")
-                for item in groups:
-                    group = item.get('group', {})
-                    group_id = group.get('id')
-                    group_name = group.get('name', '').lower()
-                    owner = group.get('owner')
-                    owner_id = owner.get('userId') if isinstance(owner, dict) else None
-                    if group_id in BLACKLISTED_GROUP_IDS:
-                        bl_reasons.append(f"User is in a blacklisted group: {group.get('name')}.")
-                    if ("british army" in group_name) and (group_id not in BA_UK_GROUP_IDS) and (owner_id not in FRIENDLY_OWNER_IDS):
-                        bl_reasons.append(f"User is in another British Army group: {group.get('name')}.")
-                instant_dismissals.extend(bl_reasons)
+                instant_dismissals.extend(check_blacklists(user_id, groups, temp_ifd))
 
                 # Early dismissal UI
                 st.header("Summary")
@@ -344,12 +333,19 @@ if run:
                 # Show groups table
                 st.markdown("### Groups (first 200 shown)")
                 if groups:
-                    groups_display = [{
-                        "group_id": g['group'].get('id'),
-                        "group_name": g['group'].get('name'),
-                        "role": g.get('role', {}).get('name') if isinstance(g.get('role'), dict) else g.get('role'),
-                        "owner_id": g['group'].get('owner', {}).get('userId') if isinstance(g['group'].get('owner'), dict) else None
-                    } for g in groups[:200]]
+                    groups_display = [
+                        {
+                            "group_id": g['group'].get('id'),
+                            "group_name": g['group'].get('name'),
+                            "role": g.get('role', {}).get('name')
+                            if isinstance(g.get('role'), dict)
+                            else g.get('role'),
+                            "owner_id": g['group'].get('owner', {}).get('userId')
+                            if isinstance(g['group'].get('owner'), dict)
+                            else None,
+                        }
+                        for g in groups[:200]
+                    ]
                     st.table(groups_display)
                 else:
                     st.write("No groups found or could not fetch groups.")
@@ -359,7 +355,14 @@ if run:
                 with st.spinner("Fetching oldest badges..."):
                     oldest = get_oldest_badges(user_id, 30)
                 if oldest:
-                    badges_display = [{"id": b.get('id'), "name": b.get('name'), "awarded": b.get('awarded') or b.get('awardedAt')} for b in oldest]
+                    badges_display = [
+                        {
+                            "id": b.get('id'),
+                            "name": b.get('name'),
+                            "awarded": b.get('awarded') or b.get('awardedAt'),
+                        }
+                        for b in oldest
+                    ]
                     st.table(badges_display)
                 else:
                     st.write("No badges or could not fetch badges.")

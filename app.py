@@ -221,6 +221,18 @@ def check_blacklists(user_id: int, groups: List[Dict[str, Any]], ifd_blacklist: 
 
 @st.cache_data
 def fetch_live_blacklist(sheet_csv_url: str) -> Set[int]:
+    from urllib.parse import urlparse
+
+    # Add URL validation to prevent SSRF
+    try:
+        parsed_url = urlparse(sheet_csv_url)
+        if parsed_url.hostname != 'docs.google.com':
+            st.warning("Warning: Live blacklist URL must be from 'docs.google.com'.")
+            return set()
+    except Exception as e:
+        st.warning(f"Warning: Invalid URL provided for live blacklist. {e}")
+        return set()
+
     try:
         r = requests.get(sheet_csv_url, timeout=12)
         r.raise_for_status()

@@ -60,6 +60,17 @@ def get_user_info(user_id: int) -> Optional[Dict[str, Any]]:
         return None
 
 @st.cache_data
+def get_user_avatar_url(user_id: int) -> Optional[str]:
+    url = f"https://thumbnails.roblox.com/v1/users/avatar-headshot?userIds={user_id}&size=150x150&format=Png&isCircular=false"
+    try:
+        r = requests.get(url, timeout=12)
+        r.raise_for_status()
+        data = r.json().get('data', [])
+        return data[0]['imageUrl'] if data else None
+    except requests.RequestException:
+        return None
+
+@st.cache_data
 def get_friend_count(user_id: int) -> Optional[int]:
     url = f"https://friends.roblox.com/v1/users/{user_id}/friends/count"
     try:
@@ -227,13 +238,14 @@ def fetch_live_blacklist(sheet_csv_url: str) -> Set[int]:
 # --------- UI ----------
 st.title("Roblox User Verifier")
 
-username = st.text_input("Roblox username", value="", help="Enter the Roblox username to verify.")
-sheet_url = st.text_input("Optional: Live blacklist CSV URL (public Google Sheet export URL)", value="", help="Provide CSV export link to include more blacklist IDs.")
-run = st.button("Run Verification")
+st.sidebar.title("Verification Options")
+username = st.sidebar.text_input("Roblox username", value="", help="Enter the Roblox username to verify.")
+sheet_url = st.sidebar.text_input("Optional: Live blacklist CSV URL (public Google Sheet export URL)", value="", help="Provide CSV export link to include more blacklist IDs.")
+run = st.sidebar.button("Run Verification")
 
-st.markdown("--- ")
+st.sidebar.markdown("---")
 
-with st.expander("Config summary"):
+with st.sidebar.expander("Config summary"):
     st.write(
         {
             "Friendly owner IDs": len(FRIENDLY_OWNER_IDS),
@@ -245,6 +257,8 @@ with st.expander("Config summary"):
             "NSFW words": len(NSFW_WORDS),
         }
     )
+
+st.markdown("--- ")
 
 if run:
     if not username:
@@ -296,13 +310,25 @@ if run:
 
                 # Early dismissal UI
                 st.header("Summary")
-                st.write(f"Display name: {user_info.get('displayName')}  ·  Username: @{user_info.get('name')}")
-                st.write(f"User ID: {user_id}")
+
+                col1, col2 = st.columns([1, 4])
+                with col1:
+                    avatar_url = get_user_avatar_url(user_id)
+                    if avatar_url:
+                        st.image(avatar_url, caption=user_info.get('name'), width=150)
+                    else:
+                        st.write("No avatar found.")
+
+                with col2:
+                    st.write(f"**Display Name:** {user_info.get('displayName')}")
+                    st.write(f"**Username:** @{user_info.get('name')}")
+                    st.write(f"**User ID:** {user_id}")
+                    st.markdown(f"**[View Profile on Roblox](https://www.roblox.com/users/{user_id}/profile)**")
 
                 if instant_dismissals:
-                    st.error("INSTANT DISMISSAL")
+                    st.error("### ❌ INSTANT DISMISSAL")
                     for i, r in enumerate(instant_dismissals, 1):
-                        st.write(f"{i}. {r}")
+                        st.error(f"{i}. {r}")
                     st.stop()
 
                 with st.spinner("Running social activity checks (friends, groups, badges)..."):
@@ -310,21 +336,27 @@ if run:
                 red_flags.extend(activity_flags)
 
                 st.subheader("Final Report")
-                st.write("Total red flags:", len(red_flags))
+                st.metric("Total Red Flags", len(red_flags))
+
                 if len(red_flags) >= 2:
-                    st.error("DISMISSED (2+ red flags)")
+                    st.error("### ❌ DISMISSED (2+ red flags)")
                 else:
-                    st.success("VERIFIED (fewer than 2 red flags)")
+                    st.success("### ✅ VERIFIED (fewer than 2 red flags)")
 
                 if red_flags:
+                    st.write("#### Red Flags Found:")
                     for i, r in enumerate(red_flags, 1):
-                        st.write(f"{i}. {r}")
+                        st.warning(f"{i}. {r}")
                 else:
                     st.write("No red flags found.")
 
-                st.markdown("### Manual checks required")
-                st.write("- Review friends list for suspicious / 'bacon' alts.")
-                st.write("- Manually inspect groups listed below.")
+                st.info(
+                    """
+                    ### Manual checks required
+                    - Review friends list for suspicious / 'bacon' alts.
+                    - Manually inspect groups listed below.
+                    """
+                )
 
                 # Show groups table
                 with st.expander("Groups (first 200 shown)"):

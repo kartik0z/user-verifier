@@ -218,10 +218,6 @@ def check_username(user_info: Dict[str, Any]) -> Tuple[Optional[str], Optional[s
     for word in NSFW_WORDS:
         if word in username:
             return f"Username contains offensive word: '{word}'.", None
-            
-    # Red Flag Check
-    if len(re.findall(r'\d', username)) >= 4:
-        return None, "Username looks spammy (4+ digits)."
         
     return None, None
 

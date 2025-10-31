@@ -218,7 +218,6 @@ def check_username(user_info: Dict[str, Any]) -> Tuple[Optional[str], Optional[s
     for word in NSFW_WORDS:
         if word in username:
             return f"Username contains offensive word: '{word}'.", None
-        
     return None, None
 
 def check_social_activity(user_id: int, groups: List[Dict[str, Any]]) -> List[str]:
